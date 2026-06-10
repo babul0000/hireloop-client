@@ -31,7 +31,10 @@ async function run() {
         const database = client.db('HireLoop');
         const jobsCollection = database.collection('jobs')
         const companyCollection = database.collection('companies')
+        const usersCollection = database.collection("user");
         const applicationsCollection = database.collection('application')
+        const planCollection = database.collection('plans')
+        const subscriptionCollection = database.collection('subscriptions');
 
         app.get("/jobs", async (req, res) => {
             const query = {};
@@ -60,9 +63,22 @@ async function run() {
             res.send(result)
         })
 
-        app.post("/api/applications", async(req, res) => {
+        app.get("/api/applications", async (req, res) => {
+            const query = {};
+            if (req, query.applicantId) {
+                query.application = req.query.applicantId;
+            }
+            if (req.query.jobId) {
+                query.jobId = req.query.jobId;
+            }
+            const cursor = await applicationsCollection.find(query)
+            const result = await cursor.toArray();
+            res.send(result)
+        })
+
+        app.post("/api/applications", async (req, res) => {
             const application = req.body;
-            const newApplication ={
+            const newApplication = {
                 ...application,
                 createdAt: new Date()
             }
@@ -113,6 +129,38 @@ async function run() {
             }
             const result = await companyCollection.insertOne(newCompany)
             res.send(result)
+        })
+        app.get('/api/plans', async (req, res) => {
+            const query = {}
+            if (req.query.plan_id) {
+                query.id = req.query.plan_id
+            }
+            const plan = await planCollection.findOne(query);
+            res.send(plan)
+        })
+
+
+        // subscription 
+        app.post('/api/subscriptions', async (req, res) => {
+            const data = req.body;
+            const subsInfo = {
+                ...data,
+                createdAt: new Date()
+            }
+
+            const result = await subscriptionCollection.insertOne(subsInfo);
+
+            // update the user plan information
+            const filter = { email: data.email };
+            // update the value of the 'quantity' field to 5
+            const updateDocument = {
+                $set: {
+                    plan: data.planId,
+                },
+            };
+
+            const updateResult = await usersCollection.updateOne(filter, updateDocument);
+            res.send(updateResult)
         })
 
 
