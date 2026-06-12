@@ -99,11 +99,67 @@ async function run() {
 
 
 
+        // app.get("/api/companies", async (req, res) => {
+        //     const cursor = companyCollection.find();
+        //     const result = await cursor.toArray();
+        //     res.send(result);
+        // })
+
+        // inefficient to join collection
+        // app.get("/api/companies", async (req, res) => {
+        //     const cursor = companyCollection.find();
+        //     const companies = await cursor.toArray();
+
+        //     for(const company of companies){
+        //         const filter = {
+        //             companyId: company._id.toString()
+        //         }
+        //         const jobCount = await jobsCollection.countDocuments(filter)
+        //         company.jobCount = jobCount
+        //     }
+
+        //     res.send(companies);
+        // })
+
+
         app.get("/api/companies", async (req, res) => {
-            const cursor = companyCollection.find();
-            const result = await cursor.toArray();
-            res.send(result);
+            const pipeline = [
+                { $skip: 5 }
+            ];
+            const cursor = await companyCollection.aggregate(pipeline);
+            const result = await cursor.toArray()
+            return result;
         })
+
+        app.get('/api/stats', async (req, res) => {
+            const pipeline = [
+                {
+                    $group: {
+                        _id: "$jobType",
+                        count: {
+                            $sum: 1
+                        }
+                        // rating: { $first: "$rated" },
+                        // totalRuntime: { $sum: "$runtime" }
+                    }
+                },
+                {
+                    $project: {
+                        jobType: '$_id',
+                        _id: 0,
+                        count: 1
+                    }
+                },
+                {
+                    $sort: {count: 1}
+                }
+            ];
+
+            const cursor = jobsCollection.aggregate(pipeline);
+            const result = await cursor.toArray();
+            res.send(result)
+        })
+
 
         app.get("/api/my/companies", async (req, res) => {
             const query = {};
@@ -116,7 +172,7 @@ async function run() {
             console.log(cursor);
 
             // const result = await cursor.toArray();
-            res.send(cursor);
+            res.send(cursor || {});
 
         })
 
@@ -128,6 +184,21 @@ async function run() {
                 createdAt: new Date()
             }
             const result = await companyCollection.insertOne(newCompany)
+            res.send(result)
+        })
+
+
+
+        app.patch('/api/companies/:id', async (req, res) => {
+            const id = req.params.id;
+            const updatedCompany = req.body;
+            const filter = { _id: new ObjectId(id) }
+            const updateDoc = {
+                $set: {
+                    status: updatedCompany.status
+                }
+            }
+            const result = await companyCollection.updateOne(filter, updateDoc)
             res.send(result)
         })
         app.get('/api/plans', async (req, res) => {
