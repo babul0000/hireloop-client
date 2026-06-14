@@ -12,6 +12,13 @@ app.get('/', (req, res) => {
     res.send('Hello World!')
 })
 
+const logger = (req, res, next) => {
+    console.log("logger", req.params);
+    next();
+
+}
+
+
 const uri = process.env.MONGODB_URI;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -35,6 +42,57 @@ async function run() {
         const applicationsCollection = database.collection('application')
         const planCollection = database.collection('plans')
         const subscriptionCollection = database.collection('subscriptions');
+        const sessionCollection = database.collection('session');
+
+        // verification token
+        const verifyToken = async (req, res, next) => {
+            console.log('headers', req.headers);
+            const authHeader = req.headers?.authorization;
+            if (!authHeader) {
+                return res.status(401).send({ message: 'unauthorize access' })
+            }
+
+            const token = authHeader.split(' ')[1]
+            if (!token) {
+                return res.status(401).send({ message: 'unauthorize access' })
+            }
+            const query = { token: token }
+            const session = await sessionCollection.findOne(query)
+            const userId = session.userId;
+
+            const userQuery = {
+                _id: userId
+            }
+            const user = await usersCollection.findOne(userQuery)
+            // console.log(user);
+            req.user = user;
+            next()
+
+        }
+
+
+        // seeker verification
+        const verifySeeker = async (req, res, next) => {
+            if (req.user?.role !== 'seeker') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next()
+        }
+        // recruiter verification
+        const verifyRecruiter = async (req, res, next) => {
+            if (req.user.role !== 'recruiter') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next()
+        }
+
+        // must verify admin
+        const verifyAdmin = async (req, res, next) => {
+            if (req.user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next()
+        }
 
         app.get("/jobs", async (req, res) => {
             const query = {};
@@ -63,10 +121,16 @@ async function run() {
             res.send(result)
         })
 
-        app.get("/api/applications", async (req, res) => {
+        app.get("/api/applications", verifyToken, verifySeeker, async (req, res) => {
             const query = {};
             if (req, query.applicantId) {
                 query.application = req.query.applicantId;
+
+                console.log(req.user, req.query.applicantId);
+                if (req.user._id.toString() !== req.query.applicantId) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
+
             }
             if (req.query.jobId) {
                 query.jobId = req.query.jobId;
@@ -106,20 +170,20 @@ async function run() {
         // })
 
         // inefficient to join collection
-        // app.get("/api/companies", async (req, res) => {
-        //     const cursor = companyCollection.find();
-        //     const companies = await cursor.toArray();
+        app.get("/api/companies", verifyToken, async (req, res) => {
+            const cursor = companyCollection.find();
+            const companies = await cursor.toArray();
 
-        //     for(const company of companies){
-        //         const filter = {
-        //             companyId: company._id.toString()
-        //         }
-        //         const jobCount = await jobsCollection.countDocuments(filter)
-        //         company.jobCount = jobCount
-        //     }
+            for (const company of companies) {
+                const filter = {
+                    companyId: company._id.toString()
+                }
+                const jobCount = await jobsCollection.countDocuments(filter)
+                company.jobCount = jobCount
+            }
 
-        //     res.send(companies);
-        // })
+            res.send(companies);
+        })
 
 
         app.get("/api/companies", async (req, res) => {
@@ -130,6 +194,7 @@ async function run() {
             const result = await cursor.toArray()
             return result;
         })
+
 
         app.get('/api/stats', async (req, res) => {
             const pipeline = [
@@ -151,7 +216,7 @@ async function run() {
                     }
                 },
                 {
-                    $sort: {count: 1}
+                    $sort: { count: 1 }
                 }
             ];
 
@@ -189,7 +254,7 @@ async function run() {
 
 
 
-        app.patch('/api/companies/:id', async (req, res) => {
+        app.patch('/api/companies/:id', logger, verifyToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const updatedCompany = req.body;
             const filter = { _id: new ObjectId(id) }
@@ -201,6 +266,8 @@ async function run() {
             const result = await companyCollection.updateOne(filter, updateDoc)
             res.send(result)
         })
+
+
         app.get('/api/plans', async (req, res) => {
             const query = {}
             if (req.query.plan_id) {
