@@ -58,12 +58,18 @@ async function run() {
             }
             const query = { token: token }
             const session = await sessionCollection.findOne(query)
+            if (!session) {
+                return res.status(401).send({ message: 'unauthorize access' })
+            }
             const userId = session.userId;
 
             const userQuery = {
                 _id: userId
             }
             const user = await usersCollection.findOne(userQuery)
+            if (!user) {
+                return res.status(401).send({ message: 'unauthorize access' })
+            }
             // console.log(user);
             req.user = user;
             next()
@@ -94,19 +100,51 @@ async function run() {
             next()
         }
 
+
         app.get("/jobs", async (req, res) => {
+            console.log('server side q', req.query)
             const query = {};
+            // jon filter related query
+            if (req.query.search) {
+                query.$or = [
+                    { jobTitle: { $regex: req.query.search, $options: 'i' } },
+                    { companyName: { $regex: req.query.search, $options: 'i' } }
+                ]
+            }
+            if (req.query.jobType) {
+                query.jobType = req.query.jobType
+            }
+            if (req.query.jobCategory) {
+                query.jobCategory = req.query.jobCategory
+            }
+            if (req.query.isRemote) {
+                query.isRemote = req.query.isRemote
+            }
+
+            // company related query
             if (req.query.companyId) {
-                query.companyId = await req.query.companyId;
+                query.companyId = req.query.companyId;
             }
             if (req.query.status) {
-                query.status = await req.query.status;
+                query.status = req.query.status;
+            }
+
+            // pagination related page
+            if (req.query.page) {
+                const page = req.query.page;
+                const perPage = req.query.perPage || 12;
+                const skipItems = (page - 1) * perPage;
+
+                const total = await jobsCollection.countDocuments(query)
+                const cursor = await jobsCollection.find(query).skip(skipItems).limit(perPage);
+                const jobs = await cursor.toArray();
+                return res.send({ total, jobs })
             }
             console.log(query, "query");
 
             const cursor = await jobsCollection.find(query)
             const result = await cursor.toArray();
-            console.log(result);
+            // console.log(result);
 
             res.send(result)
         })
